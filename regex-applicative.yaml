@@ -1,0 +1,15 @@
+Name: regex-applicative
+Version: 0.1.5
+Exposed-Modules:
+    - Text.Regex.Applicative
+    - Text.Regex.Applicative.Object
+Hidden-Modules:
+    - Text.Regex.Applicative.Interface
+    - Text.Regex.Applicative.Types
+    - Text.Regex.Applicative.Compile
+    - Text.Regex.Applicative.StateQueue
+Build-Depends:
+    - containers
+    - base
+    - applicative
+    - transformers
