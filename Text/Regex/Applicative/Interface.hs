@@ -158,12 +158,14 @@ match re = let obj = compile re in \str ->
 findFirstPrefix :: RE s a -> [s] -> Maybe (a, [s])
 findFirstPrefix re str = go (compile re) str Nothing
     where
+    walk :: ReObject s a -> [Thread s a] -> (ReObject s a, Maybe a)
     walk obj [] = (obj, Nothing)
     walk obj (t:ts) =
         case getResult t of
             Just r -> (obj, Just r)
             Nothing -> walk (addThread t obj) ts
 
+    go :: ReObject s a -> [s] -> Maybe (a, [s]) -> Maybe (a, [s])
     go obj str resOld =
         case walk emptyObject $ threads obj of
             (obj', resThis) ->
@@ -193,6 +195,7 @@ findFirstPrefix re str = go (compile re) str Nothing
 findLongestPrefix :: RE s a -> [s] -> Maybe (a, [s])
 findLongestPrefix re str = go (compile re) str Nothing
     where
+    go :: ReObject s a -> [s] -> Maybe (a, [s]) -> Maybe (a, [s])
     go obj str resOld =
         let res = (fmap (flip (,) str) $ listToMaybe $ results obj) <|> resOld
         in
@@ -205,6 +208,7 @@ findLongestPrefix re str = go (compile re) str Nothing
 findShortestPrefix :: RE s a -> [s] -> Maybe (a, [s])
 findShortestPrefix re str = go (compile re) str
     where
+    go :: ReObject s a -> [s] -> Maybe (a, [s])
     go obj str =
         case results obj of
             r : _ -> Just (r, str)
@@ -279,7 +283,8 @@ gotResult _ = False
 -- 3.3. If they are produced on the different steps, choose the later one (since
 -- they have the same prefixes, later means longer)
 findExtremalInfix
-    :: -- function to combine a later result (first arg) to an earlier one (second
+    :: ∀ s a .
+       -- function to combine a later result (first arg) to an earlier one (second
        -- arg)
        (InfixMatchingState s a -> InfixMatchingState s a -> InfixMatchingState s a)
     -> RE s a
@@ -291,12 +296,10 @@ findExtremalInfix newOrOld re str =
         r@GotResult{} ->
             Just (prefixStr r, result r, postfixStr r)
     where
-    {-
     go :: ReObject s ((Int, [s]), a)
        -> [s]
        -> InfixMatchingState s a
        -> InfixMatchingState s a
-    -}
     go obj str resOld =
         let resThis =
                 foldl
