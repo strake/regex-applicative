@@ -21,6 +21,8 @@ Source-repository head
 Library
   Default-language:    Haskell2010
   Default-extensions:  UnicodeSyntax, ScopedTypeVariables
+                     , GeneralizedNewtypeDeriving
+                     , DeriveFunctor, DeriveFoldable, DeriveTraversable
   Build-depends:       base < 5,
                        containers,
                        transformers

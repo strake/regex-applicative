@@ -1,9 +1,16 @@
 {-# LANGUAGE TypeFamilies, GADTs, TupleSections #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 module Text.Regex.Applicative.Interface where
-import Control.Applicative hiding (empty)
-import qualified Control.Applicative
+import Control.Applicative
 import Control.Arrow
+import Control.Monad.Trans.Class
+import Control.Monad.Trans.Maybe
+import Control.Monad.Trans.Writer
+import Data.Foldable
+import Data.Functor.Classes
+import Data.List (tails)
+import Data.Semigroup (Semigroup)
+import qualified Data.Monoid as M (Alt (..))
 import Data.Traversable
 import Data.String
 import Data.Maybe
@@ -156,25 +163,13 @@ match re = let obj = compile re in \str ->
 -- >Text.Regex.Applicative> findFirstPrefix "bc" "abc"
 -- >Nothing
 findFirstPrefix :: RE s a -> [s] -> Maybe (a, [s])
-findFirstPrefix re str = go (compile re) str Nothing
+findFirstPrefix re = getDual . findWith (walk emptyObject . threads) re
     where
-    walk :: ReObject s a -> [Thread s a] -> (ReObject s a, Maybe a)
-    walk obj [] = (obj, Nothing)
-    walk obj (t:ts) =
-        case getResult t of
-            Just r -> (obj, Just r)
-            Nothing -> walk (addThread t obj) ts
-
-    go :: ReObject s a -> [s] -> Maybe (a, [s]) -> Maybe (a, [s])
-    go obj str resOld =
-        case walk emptyObject $ threads obj of
-            (obj', resThis) ->
-                let res = ((flip (,) str) <$> resThis) <|> resOld
-                in
-                    case str of
-                        _ | failed obj' -> res
-                        [] -> res
-                        (s:ss) -> go (step s obj') ss res
+    walk :: Alternative p => ReObject s a -> [Thread s a] -> (ReObject s a, p a)
+    walk obj [] = (obj, empty)
+    walk obj (t:ts) = case getResult t of
+        Just r -> (obj, pure r)
+        Nothing -> walk (addThread t obj) ts
 
 -- | Find the longest string prefix which is matched by the regular expression.
 --
@@ -193,16 +188,25 @@ findFirstPrefix re str = go (compile re) str Nothing
 -- >Text.Regex.Applicative Data.Char> findLongestPrefix lexeme "iffoo"
 -- >Just (Right "iffoo","")
 findLongestPrefix :: RE s a -> [s] -> Maybe (a, [s])
-findLongestPrefix re str = go (compile re) str Nothing
-    where
-    go :: ReObject s a -> [s] -> Maybe (a, [s]) -> Maybe (a, [s])
-    go obj str resOld =
-        let res = (fmap (flip (,) str) $ listToMaybe $ results obj) <|> resOld
-        in
-            case str of
-                _ | failed obj -> res
-                [] -> res
-                (s:ss) -> go (step s obj) ss res
+findLongestPrefix re = getDual . findWith (id &&& Dual . listToMaybe . results) re
+
+findWith :: Alternative f => (ReObject s a -> (ReObject s a, f a)) -> RE s a -> [s] -> f (a, [s])
+findWith f re = M.getAlt . execWriter . runMaybeT . foldlM go (compile re) . tails
+  where go = f & \ (obj, af) str -> do
+            lift . tell . M.Alt $ flip (,) str <$> af
+            case str of _ | failed obj -> empty
+                        [] -> empty
+                        s:_ -> pure (step s obj)
+        (&) = flip (.)
+
+newtype Dual f a = Dual { getDual :: f a }
+  deriving (Eq, Ord, Read, Show, Bounded, Semigroup, Monoid,
+            Eq1, Ord1, Read1, Show1, Functor, Foldable, Traversable,
+            Applicative, Monad)
+
+instance Alternative f => Alternative (Dual f) where
+    empty = Dual empty
+    Dual x <|> Dual y = Dual (y <|> x)
 
 -- | Find the shortest prefix (analogous to 'findLongestPrefix')
 findShortestPrefix :: RE s a -> [s] -> Maybe (a, [s])
