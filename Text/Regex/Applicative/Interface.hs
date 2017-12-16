@@ -1,14 +1,17 @@
 {-# LANGUAGE TypeFamilies, GADTs, TupleSections #-}
-{-# OPTIONS_GHC -fno-warn-orphans #-}
+{-# LANGUAGE PartialTypeSignatures #-}
+{-# OPTIONS_GHC -Wno-orphans
+                -Wno-partial-type-signatures #-}
 module Text.Regex.Applicative.Interface where
 import Control.Applicative
 import Control.Arrow
+import Control.Monad
 import Control.Monad.Trans.Class
 import Control.Monad.Trans.Maybe
+import Control.Monad.Trans.State
 import Control.Monad.Trans.Writer
-import Data.Foldable
 import Data.Functor.Classes
-import Data.List (tails)
+import Data.List (uncons)
 import Data.Semigroup (Semigroup)
 import qualified Data.Monoid as M (Alt (..))
 import Data.Traversable
@@ -191,13 +194,17 @@ findLongestPrefix :: RE s a -> [s] -> Maybe (a, [s])
 findLongestPrefix re = getDual . findWith (id &&& Dual . listToMaybe . results) re
 
 findWith :: Alternative f => (ReObject s a -> (ReObject s a, f a)) -> RE s a -> [s] -> f (a, [s])
-findWith f re = M.getAlt . execWriter . runMaybeT . foldlM go (compile re) . tails
-  where go = f & \ (obj, af) str -> do
-            lift . tell . M.Alt $ flip (,) str <$> af
-            case str of _ | failed obj -> empty
-                        [] -> empty
-                        s:_ -> pure (step s obj)
-        (&) = flip (.)
+findWith f re = fmap (M.getAlt . execWriter . runMaybeT) . runStateT $
+                findWithM go re (StateT (MaybeT . pure . uncons))
+  where go = f >>> \ (obj, af) -> get >>= \ str -> obj <$ tells' M.Alt (flip (,) str <$> af)
+        tells' f = lift . lift . tell . f
+
+findWithM :: MonadPlus m => (ReObject s a -> m (ReObject s a)) -> RE s a -> m s -> m b
+findWithM f = flip go . compile
+  where go xm = iterateM $ mfilter (not . failed) . f >=> \ obj -> flip step obj <$> xm
+
+iterateM :: Monad m => (a -> m a) -> a -> m b
+iterateM f = f >=> iterateM f
 
 newtype Dual f a = Dual { getDual :: f a }
   deriving (Eq, Ord, Read, Show, Bounded, Semigroup, Monoid,
