@@ -166,8 +166,15 @@ match re = let obj = compile re in \str ->
 -- >Text.Regex.Applicative> findFirstPrefix "bc" "abc"
 -- >Nothing
 findFirstPrefix :: RE s a -> [s] -> Maybe (a, [s])
-findFirstPrefix re = getDual . findWith (walk emptyObject . threads) re
-    where
+findFirstPrefix re = runStateT $ findFirstPrefixM re (StateT uncons)
+
+findFirstPrefixM :: ∀ m s a . MonadPlus m => RE s a -> m s -> m a
+findFirstPrefixM re = maybe empty pure . getDual . M.getAlt <=<
+                      execWriterT . runMaybeT . findWithM go re . lift . lift
+  where
+    go :: ReObject s a -> MaybeT (WriterT _ m) (ReObject s a)
+    go = mfilter (not . failed) . lift . WriterT . pure . walk emptyObject . threads
+
     walk :: Alternative p => ReObject s a -> [Thread s a] -> (ReObject s a, p a)
     walk obj [] = (obj, empty)
     walk obj (t:ts) = case getResult t of
@@ -233,9 +240,11 @@ findShortestPrefix re str = go (compile re) str
 -- Otherwise behaves like 'findFirstPrefix'. Returns the result together with
 -- the prefix and suffix of the string surrounding the match.
 findFirstInfix :: RE s a -> [s] -> Maybe ([s], a, [s])
-findFirstInfix re str =
-    fmap (\((first, res), last) -> (first, res, last)) $
-    findFirstPrefix ((,) <$> few anySym <*> re) str
+findFirstInfix re = (fmap . fmap $ \((first, res), last) -> (first, res, last)) . runStateT $
+                    findFirstInfixM re (StateT uncons)
+
+findFirstInfixM :: MonadPlus m => RE s a -> m s -> m ([s], a)
+findFirstInfixM = findFirstPrefixM . liftA2 (,) (few anySym)
 
 -- Auxiliary function for findExtremeInfix
 prefixCounter :: RE s (Int, [s])
