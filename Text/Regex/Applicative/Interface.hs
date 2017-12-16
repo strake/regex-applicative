@@ -210,17 +210,7 @@ instance Alternative f => Alternative (Dual f) where
 
 -- | Find the shortest prefix (analogous to 'findLongestPrefix')
 findShortestPrefix :: RE s a -> [s] -> Maybe (a, [s])
-findShortestPrefix re str = go (compile re) str
-    where
-    go :: ReObject s a -> [s] -> Maybe (a, [s])
-    go obj str =
-        case results obj of
-            r : _ -> Just (r, str)
-            _ | failed obj -> Nothing
-            _ ->
-                case str of
-                    [] -> Nothing
-                    s:ss -> go (step s obj) ss
+findShortestPrefix re = findWith (id &&& listToMaybe . results) re
 
 -- | Find the leftmost substring that is matched by the regular expression.
 -- Otherwise behaves like 'findFirstPrefix'. Returns the result together with
